@@ -25,8 +25,8 @@ parser.add_argument(
     nargs='?',
     default='model_data/yolo.h5')
 parser.add_argument(
-    'source',
-    help='video source for VideoCapture', nargs='?', default=0)
+    '--source', '-i',
+    help='video source (file path) for OpenCV VideoCapture, default: webcam 0', default=0)
 parser.add_argument(
     '-a',
     '--anchors_path',
@@ -126,13 +126,13 @@ def _main(args):
             print('Error grabbing:', ret, cv_image)
             break
 
-        h, w = cv_image.shape[:2]
+        in_h, in_w = cv_image.shape[:2]
 
         if is_fixed_size:
             cv_image = cv2.resize(cv_image, tuple(reversed(model_image_size)))
         else:
-            new_image_size = (w - (w % 32),
-                              h - (h % 32))
+            new_image_size = (in_w - (in_w % 32),
+                              in_h - (in_h % 32))
             cv_image = cv2.resize(cv_image, new_image_size)
 
         h, w = cv_image.shape[:2]
@@ -194,7 +194,7 @@ def _main(args):
             del draw
 
         # image.save(os.path.join(output_path, image_file), quality=90)
-        cv_image2 = np.array(image)
+        cv_image2 = cv2.resize(np.array(image), (in_w, in_h))
         cv2.imshow('Yolo!', cv_image2)
         key = cv2.waitKey(1)
         if key & 0xff == ord('q'):
