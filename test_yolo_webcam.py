@@ -17,11 +17,11 @@ import cv2
 import time
 
 parser = argparse.ArgumentParser(
-    description='Run a YOLO_v2 style detection model on test images..')
+    description='Run a YOLO_v2 style detection model on test images.')
 parser.add_argument(
     'model_path',
     help='path to h5 model file containing body'
-    'of a YOLO_v2 model',
+         'of a YOLO_v2 model',
     nargs='?',
     default='model_data/yolo.h5')
 parser.add_argument(
@@ -54,6 +54,53 @@ parser.add_argument(
     '--test',
     action='store_true',
     help='suppress display, boxes painting: show box count and FPS')
+parser.add_argument(
+    '--no-label',
+    action='store_true',
+    help='supress drawing class and confidence labels next to boxes')
+parser.add_argument(
+    '--max-boxes',
+    type=int,
+    default=10,
+    help='max_boxes returned from yolo_eval'
+)
+parser.add_argument(
+    '--box-thickness',
+    type=int,
+    default=0,
+    help='thickness of drawn bounding boxes, in pixels'
+)
+parser.add_argument(
+    '--batch-size',
+    type=int,
+    default=1,
+    help='number of images in a single batch'
+)
+parser.add_argument(
+    '--fake-batch',
+    action='store_true',
+    help='repeat a single input frame --batch-size times (for testing performance)'
+)
+parser.add_argument(
+    '--rotation',
+    type=float,
+    default=0.,
+    help='rotation of images before processing in degrees counterclockwise'
+)
+
+
+def rotate_image(image, angle):
+    """
+    Rotate image by arbitrary angle using OpenCV affine transforms.
+    :param image: ndarray source image
+    :param angle: float angle in degrees counterclockwise
+    :return: ndarray rotated image
+    """
+    # TODO: fitting the whole image, without corner crop (as an option)
+    image_center = tuple(np.array(image.shape[1::-1]) / 2)
+    rot_mat = cv2.getRotationMatrix2D(image_center, angle, 1.0)
+    result = cv2.warpAffine(image, rot_mat, image.shape[1::-1], flags=cv2.INTER_LINEAR)
+    return result
 
 
 def _main(args):
@@ -104,21 +151,35 @@ def _main(args):
     # Generate output tensor targets for filtered bounding boxes.
     # TODO: Wrap these backend operations with Keras layers.
     yolo_outputs = yolo_head(yolo_model.output, anchors, len(class_names))
-    input_image_shape = K.placeholder(shape=(2, ))
+    input_image_shape = K.placeholder(shape=(2,))
     boxes, scores, classes = yolo_eval(
         yolo_outputs,
         input_image_shape,
+        max_boxes=args.max_boxes,
         score_threshold=args.score_threshold,
         iou_threshold=args.iou_threshold)
 
     cap = cv2.VideoCapture(args.source)
     frame_idx = 0
     start = last = time.time()
+    batch = []
     while True:
         ret, cv_image = cap.read()
+        if args.rotation != 0.:
+            cv_image = rotate_image(cv_image, args.rotation)
         frame_idx += 1
+
         current = time.time()
-        print('FPS: avg={}, current={}'.format(frame_idx / (current - start), 1 / (current - last)))
+        if args.fake_batch and args.batch_size > 1:
+            print('effective FPS: avg={}, current={}'.format(
+                frame_idx / (current - start) * args.batch_size,
+                1 / (current - last) * args.batch_size
+            ))
+        else:
+            print('FPS: avg={}, current={}'.format(
+                frame_idx / (current - start),
+                1 / (current - last)
+            ))
         last = current
         # print(ret, cv_image)
 
@@ -139,7 +200,19 @@ def _main(args):
 
         image_data = cv_image.astype(np.float)
         image_data /= 255.
-        image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
+
+        if args.batch_size == 1:
+            image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
+        elif not args.fake_batch:
+            batch.append(image_data)
+            if frame_idx % args.batch_size != 0:
+                continue
+            # print('process batch')
+            image_data = np.stack(batch)
+            batch = []
+        elif args.fake_batch:
+            # take batch
+            image_data = np.stack([image_data] * args.batch_size)
 
         out_boxes, out_scores, out_classes = sess.run(
             [boxes, scores, classes],
@@ -148,6 +221,7 @@ def _main(args):
                 input_image_shape: [w, h],
                 K.learning_phase(): 0
             })
+
         print('Found {} boxes for frame {}'.format(len(out_boxes), frame_idx))
 
         if args.test:
@@ -156,7 +230,8 @@ def _main(args):
         font = ImageFont.truetype(
             font='font/FiraMono-Medium.otf',
             size=np.floor(3e-2 * h + 0.5).astype('int32'))
-        thickness = (w + h) // 300
+
+        thickness = args.box_thickness or (w + h) // 300
 
         image = Image.fromarray(cv_image)
 
@@ -187,13 +262,13 @@ def _main(args):
                 draw.rectangle(
                     [left + i, top + i, right - i, bottom - i],
                     outline=colors[c])
-            draw.rectangle(
-                [tuple(text_origin), tuple(text_origin + label_size)],
-                fill=colors[c])
-            draw.text(text_origin, label, fill=(0, 0, 0), font=font)
+            if not args.no_label:
+                draw.rectangle(
+                    [tuple(text_origin), tuple(text_origin + label_size)],
+                    fill=colors[c])
+                draw.text(text_origin, label, fill=(0, 0, 0), font=font)
             del draw
 
-        # image.save(os.path.join(output_path, image_file), quality=90)
         cv_image2 = cv2.resize(np.array(image), (in_w, in_h))
         cv2.imshow('Yolo!', cv_image2)
         key = cv2.waitKey(1)
