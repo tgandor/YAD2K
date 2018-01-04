@@ -5,18 +5,19 @@ import colorsys
 import imghdr
 import os
 import random
+import time
+import glob
 
+from itertools import count
+
+import cv2
 import numpy as np
+
 from keras import backend as K
 from keras.models import load_model
 from PIL import Image, ImageDraw, ImageFont
 
 from yad2k.models.keras_yolo import yolo_eval, yolo_head
-
-import cv2
-import time
-
-from itertools import count
 
 parser = argparse.ArgumentParser(
     description='Run a YOLO_v2 style detection model on test images.')
@@ -95,6 +96,12 @@ parser.add_argument(
     default=0,
     help='max number frames to process, 0 means no limit'
 )
+parser.add_argument(
+    '--downsample',
+    type=int,
+    default=0,
+    help='downsample input image N times (row and column stride)'
+)
 
 
 def rotate_image(image, angle):
@@ -146,7 +153,30 @@ class FPS:
             ))
 
 
+class ImageDirectoryVideoCapture:
+    """A mock of cv2.VideoCapture for reading image files from a directory."""
+    def __init__(self, directory):
+        self.directory = directory
+        self.files = glob.iglob(os.path.join(self.directory, '*'))
+
+    def read(self):
+        try:
+            while True:
+                image_file = next(self.files)
+                image_type = imghdr.what(image_file)
+                if not image_type:
+                    continue
+                return True, cv2.imread(image_file)
+        except StopIteration:
+            return False, None
+
+
 def _main(args):
+    if os.path.isdir(str(args.source)):
+        cap = ImageDirectoryVideoCapture(args.source)
+    else:
+        cap = cv2.VideoCapture(args.source)
+
     model_path = os.path.expanduser(args.model_path)
     assert model_path.endswith('.h5'), 'Keras model must be a .h5 file.'
     anchors_path = os.path.expanduser(args.anchors_path)
@@ -180,16 +210,19 @@ def _main(args):
     model_image_size = yolo_model.layers[0].input_shape[1:3]
     is_fixed_size = model_image_size != (None, None)
 
-    # Generate colors for drawing bounding boxes.
-    hsv_tuples = [(x / len(class_names), 1., 1.)
-                  for x in range(len(class_names))]
-    colors = list(map(lambda x: colorsys.hsv_to_rgb(*x), hsv_tuples))
-    colors = list(
-        map(lambda x: (int(x[0] * 255), int(x[1] * 255), int(x[2] * 255)),
-            colors))
-    random.seed(10101)  # Fixed seed for consistent colors across runs.
-    random.shuffle(colors)  # Shuffle colors to decorrelate adjacent classes.
-    random.seed(None)  # Reset seed to default.
+    if not args.test:
+        font = None
+
+        # Generate colors for drawing bounding boxes.
+        hsv_tuples = [(x / len(class_names), 1., 1.)
+                      for x in range(len(class_names))]
+        colors = list(map(lambda x: colorsys.hsv_to_rgb(*x), hsv_tuples))
+        colors = list(
+            map(lambda x: (int(x[0] * 255), int(x[1] * 255), int(x[2] * 255)),
+                colors))
+        random.seed(10101)  # Fixed seed for consistent colors across runs.
+        random.shuffle(colors)  # Shuffle colors to decorrelate adjacent classes.
+        random.seed(None)  # Reset seed to default.
 
     # Generate output tensor targets for filtered bounding boxes.
     # TODO: Wrap these backend operations with Keras layers.
@@ -202,20 +235,25 @@ def _main(args):
         score_threshold=args.score_threshold,
         iou_threshold=args.iou_threshold)
 
-    cap = cv2.VideoCapture(args.source)
     fps = FPS(args.batch_size)
     frame_idx_generator = range(1, args.limit+1) if args.limit > 0 else count(1)
     batch = []
 
     for frame_idx in frame_idx_generator:
         ret, cv_image = cap.read()
-        if args.rotation != 0.:
-            cv_image = rotate_image(cv_image, args.rotation)
 
         if not ret or cv_image is None:
             print('Error grabbing:', ret, cv_image)
             break
 
+        # preprocessing
+        if args.downsample > 1:
+            cv_image = cv_image[::args.downsample, ::args.downsample]
+
+        if args.rotation != 0.:
+            cv_image = rotate_image(cv_image, args.rotation)
+
+        # resize to YOLO input shape
         in_h, in_w = cv_image.shape[:2]
 
         if is_fixed_size:
@@ -230,6 +268,7 @@ def _main(args):
         image_data = cv_image.astype(np.float)
         image_data /= 255.
 
+        # prepare input batch
         if args.batch_size == 1:
             image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
         elif not args.fake_batch:
@@ -243,6 +282,7 @@ def _main(args):
             # take batch
             image_data = np.stack([image_data] * args.batch_size)
 
+        # actual yolo processing
         out_boxes, out_scores, out_classes = sess.run(
             [boxes, scores, classes],
             feed_dict={
@@ -251,17 +291,20 @@ def _main(args):
                 K.learning_phase(): 0
             })
 
+        # measure performance
         fps.tick()
         fps.report()
 
         if args.test:
             continue
 
+        # report results
         print('Found {} boxes for frame {}'.format(len(out_boxes), frame_idx))
 
-        font = ImageFont.truetype(
-            font='font/FiraMono-Medium.otf',
-            size=np.floor(3e-2 * h + 0.5).astype('int32'))
+        if font is None:
+            font = ImageFont.truetype(
+                font='font/FiraMono-Medium.otf',
+                size=np.floor(3e-2 * h + 0.5).astype('int32'))
 
         thickness = args.box_thickness or (w + h) // 300
 
