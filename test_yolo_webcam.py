@@ -16,6 +16,8 @@ from yad2k.models.keras_yolo import yolo_eval, yolo_head
 import cv2
 import time
 
+from itertools import count
+
 parser = argparse.ArgumentParser(
     description='Run a YOLO_v2 style detection model on test images.')
 parser.add_argument(
@@ -87,6 +89,12 @@ parser.add_argument(
     default=0.,
     help='rotation of images before processing in degrees counterclockwise'
 )
+parser.add_argument(
+    '--limit', '-n',
+    type=int,
+    default=0,
+    help='max number frames to process, 0 means no limit'
+)
 
 
 def rotate_image(image, angle):
@@ -101,6 +109,41 @@ def rotate_image(image, angle):
     rot_mat = cv2.getRotationMatrix2D(image_center, angle, 1.0)
     result = cv2.warpAffine(image, rot_mat, image.shape[1::-1], flags=cv2.INTER_LINEAR)
     return result
+
+
+class FPS:
+    """Simple and naive frequency measurement."""
+    def __init__(self, batch_size=1):
+        self.start = None
+        self.last = None
+        self.current = None
+        self.counter = 0
+        self.batch_size = batch_size
+
+    def tick(self):
+        if self.start is None:
+            self.start = time.time()
+            self.last = self.start
+            self.current = self.start
+            return
+        self.counter += 1  # we only increase it from sample 2 onwards
+        self.last = self.current
+        self.current = time.time()
+
+    def report(self):
+        if self.start is None or self.start == self.current:
+            print('Not enough data to compute FPS.')
+            return
+        if self.batch_size > 1:
+            print('effective FPS: avg={}, current={}'.format(
+                self.counter / (self.current - self.start) * self.batch_size,
+                1 / (self.current - self.last) * self.batch_size
+            ))
+        else:
+            print('FPS: avg={}, current={}'.format(
+                self.counter / (self.current - self.start),
+                1 / (self.current - self.last)
+            ))
 
 
 def _main(args):
@@ -160,28 +203,14 @@ def _main(args):
         iou_threshold=args.iou_threshold)
 
     cap = cv2.VideoCapture(args.source)
-    frame_idx = 0
-    start = last = time.time()
+    fps = FPS(args.batch_size)
+    frame_idx_generator = range(1, args.limit+1) if args.limit > 0 else count(1)
     batch = []
-    while True:
+
+    for frame_idx in frame_idx_generator:
         ret, cv_image = cap.read()
         if args.rotation != 0.:
             cv_image = rotate_image(cv_image, args.rotation)
-        frame_idx += 1
-
-        current = time.time()
-        if args.fake_batch and args.batch_size > 1:
-            print('effective FPS: avg={}, current={}'.format(
-                frame_idx / (current - start) * args.batch_size,
-                1 / (current - last) * args.batch_size
-            ))
-        else:
-            print('FPS: avg={}, current={}'.format(
-                frame_idx / (current - start),
-                1 / (current - last)
-            ))
-        last = current
-        # print(ret, cv_image)
 
         if not ret or cv_image is None:
             print('Error grabbing:', ret, cv_image)
@@ -222,10 +251,13 @@ def _main(args):
                 K.learning_phase(): 0
             })
 
-        print('Found {} boxes for frame {}'.format(len(out_boxes), frame_idx))
+        fps.tick()
+        fps.report()
 
         if args.test:
             continue
+
+        print('Found {} boxes for frame {}'.format(len(out_boxes), frame_idx))
 
         font = ImageFont.truetype(
             font='font/FiraMono-Medium.otf',
@@ -270,7 +302,7 @@ def _main(args):
             del draw
 
         cv_image2 = cv2.resize(np.array(image), (in_w, in_h))
-        cv2.imshow('Yolo!', cv_image2)
+        cv2.imshow('Yolo2', cv_image2)
         key = cv2.waitKey(1)
         if key & 0xff == ord('q'):
             break
