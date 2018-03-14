@@ -119,7 +119,7 @@ def _main(args):
             image_type = imghdr.what(os.path.join(test_path, image_file))
             if not image_type:
                 continue
-        except IsADirectoryError:
+        except (IsADirectoryError, PermissionError):
             continue
 
         image = Image.open(os.path.join(test_path, image_file))

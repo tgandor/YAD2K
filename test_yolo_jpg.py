@@ -7,6 +7,7 @@ import os
 import random
 import time
 import glob
+import urllib.request
 
 from itertools import count
 
@@ -22,14 +23,14 @@ from yad2k.models.keras_yolo import yolo_eval, yolo_head
 parser = argparse.ArgumentParser(
     description='Run a YOLO_v2 style detection model on test images.')
 parser.add_argument(
+    'source',
+    help='video source (jpeg URL) for reading images from HTTP.')
+parser.add_argument(
     'model_path',
     help='path to h5 model file containing body'
          'of a YOLO_v2 model',
     nargs='?',
     default='model_data/yolo.h5')
-parser.add_argument(
-    '--source', '-i',
-    help='video source (file path) for OpenCV VideoCapture, default: webcam 0', default=0)
 parser.add_argument(
     '-a',
     '--anchors_path',
@@ -85,6 +86,11 @@ parser.add_argument(
     help='repeat a single input frame --batch-size times (for testing performance)'
 )
 parser.add_argument(
+    '--wait',
+    action='store_true',
+    help='Wait after capture exhausted.'
+)
+parser.add_argument(
     '--rotation',
     type=float,
     default=0.,
@@ -107,6 +113,12 @@ parser.add_argument(
     type=int,
     default=0,
     help='number of frames to skip at the beginning of capture'
+)
+parser.add_argument(
+    '--wait-key',
+    type=int,
+    default=1,
+    help='number of milliseconds for OpenCV to wait for keys when showing image'
 )
 
 
@@ -177,8 +189,44 @@ class ImageDirectoryVideoCapture:
             return False, None
 
 
+def urlopen(url):
+    req = urllib.request.Request(
+        url,
+        data=None,
+        headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                          'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36'
+        }
+    )
+    return urllib.request.urlopen(req)
+
+
+class HttpJpegVideoCapture:
+    def __init__(self, url, interval=2.5, add_time=True):
+        self.url = url
+        self.interval = interval
+        self.last_read = time.time() - interval
+        self.add_time = add_time
+
+    def read(self):
+        need_wait = self.last_read + self.interval - time.time()
+        if need_wait > 0:
+            print('Waiting', need_wait)
+            k = cv2.waitKey(int(need_wait * 1000))
+            if k & 0xff == ord('q'):
+                return False, None
+        self.last_read = time.time()
+        url = self.url if not self.add_time else self.url + '?t=' + str(int(time.time() * 1000))
+        data = urlopen(url).read()
+        data = np.fromstring(data, np.uint8)
+        print(url)
+        return True, cv2.imdecode(data, cv2.IMREAD_COLOR)
+
+
 def _main(args):
-    if os.path.isdir(str(args.source)):
+    if args.source.startswith('http'):
+        cap = HttpJpegVideoCapture(args.source)
+    elif os.path.isdir(str(args.source)):
         cap = ImageDirectoryVideoCapture(args.source)
     else:
         cap = cv2.VideoCapture(args.source)
@@ -364,10 +412,14 @@ def _main(args):
         cv_image2 = cv2.resize(np.array(image), (in_w, in_h))
         cv2.imshow('Yolo2', cv_image2)
         cv2.imshow('Original', original)
-        key = cv2.waitKey(1)
+        key = cv2.waitKey(args.wait_key)
         if key & 0xff == ord('q'):
             break
     sess.close()
+    if args.wait:
+        while True:
+            if cv2.waitKey() & 0xff == ord('q'):
+                break
 
 
 if __name__ == '__main__':
