@@ -108,6 +108,11 @@ parser.add_argument(
     default=0,
     help='number of frames to skip at the beginning of capture'
 )
+parser.add_argument(
+    '--dump',
+    action='store_true',
+    help='save image and processed result'
+)
 
 
 def rotate_image(image, angle):
@@ -364,6 +369,9 @@ def _main(args):
         cv_image2 = cv2.resize(np.array(image), (in_w, in_h))
         cv2.imshow('Yolo2', cv_image2)
         cv2.imshow('Original', original)
+        if args.dump and len(out_boxes):
+            cv2.imwrite('frame_{:.2f}.jpg'.format(time.time()), original)
+            cv2.imwrite('yolo_{:.2f}.jpg'.format(time.time()), cv_image2)
         key = cv2.waitKey(1)
         if key & 0xff == ord('q'):
             break

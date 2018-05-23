@@ -120,6 +120,11 @@ parser.add_argument(
     default=1,
     help='number of milliseconds for OpenCV to wait for keys when showing image'
 )
+parser.add_argument(
+    '--dump',
+    action='store_true',
+    help='save image and processed result'
+)
 
 
 def rotate_image(image, angle):
@@ -412,6 +417,9 @@ def _main(args):
         cv_image2 = cv2.resize(np.array(image), (in_w, in_h))
         cv2.imshow('Yolo2', cv_image2)
         cv2.imshow('Original', original)
+        if args.dump:
+            cv2.imwrite('frame_{:.2f}.jpg'.format(time.time()), original)
+            cv2.imwrite('yolo_{:.2f}.jpg'.format(time.time()), cv_image2)
         key = cv2.waitKey(args.wait_key)
         if key & 0xff == ord('q'):
             break
