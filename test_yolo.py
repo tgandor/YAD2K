@@ -51,6 +51,10 @@ parser.add_argument(
     type=float,
     help='threshold for non max suppression IOU, default .5',
     default=.5)
+parser.add_argument(
+    '--gpu',
+    help='specify GPU to use (0, 1, etc.)'
+)
 
 
 def _main(args):
@@ -64,6 +68,10 @@ def _main(args):
     if not os.path.exists(output_path):
         print('Creating output path {}'.format(output_path))
         os.mkdir(output_path)
+
+    if args.gpu:
+        # https://github.com/keras-team/keras/issues/3685
+        os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
     sess = K.get_session()  # TODO: Remove dependence on Tensorflow session.
 
