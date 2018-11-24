@@ -120,6 +120,7 @@ Specify matching anchors and classes with --anchors_path and --classes_path flag
     boxes, scores, classes = yolo_eval(
         yolo_outputs,
         input_image_shape,
+        max_boxes=20,
         score_threshold=args.score_threshold,
         iou_threshold=args.iou_threshold)
 

@@ -5,6 +5,7 @@ import colorsys
 import imghdr
 import os
 import random
+import re
 import time
 import glob
 
@@ -185,6 +186,8 @@ class ImageDirectoryVideoCapture:
 def _main(args):
     if os.path.isdir(str(args.source)):
         cap = ImageDirectoryVideoCapture(args.source)
+    elif re.match(r'\d+$', str(args.source)):
+        cap = cv2.VideoCapture(int(args.source))
     else:
         cap = cv2.VideoCapture(args.source)
 
