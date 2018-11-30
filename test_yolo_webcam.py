@@ -15,105 +15,30 @@ import cv2
 import numpy as np
 
 from keras import backend as K
-from keras.models import load_model
+from yad2k.models.utils import load_model
 from PIL import Image, ImageDraw, ImageFont
 
 from yad2k.models.keras_yolo import yolo_eval, yolo_head
 
-parser = argparse.ArgumentParser(
-    description='Run a YOLO_v2 style detection model on test images.')
-parser.add_argument(
-    'model_path',
-    help='path to h5 model file containing body'
-         'of a YOLO_v2 model',
-    nargs='?',
-    default='model_data/yolo.h5')
-parser.add_argument(
-    '--source', '-i',
-    help='video source (file path) for OpenCV VideoCapture, default: webcam 0', default=0)
-parser.add_argument(
-    '-a',
-    '--anchors_path',
-    help='path to anchors file, defaults to yolo_anchors.txt',
-    default='model_data/yolo_anchors.txt')
-parser.add_argument(
-    '-c',
-    '--classes_path',
-    help='path to classes file, defaults to coco_classes.txt',
-    default='model_data/coco_classes.txt')
-parser.add_argument(
-    '-s',
-    '--score_threshold',
-    type=float,
-    help='threshold for bounding box scores, default .3',
-    default=.3)
-parser.add_argument(
-    '-iou',
-    '--iou_threshold',
-    type=float,
-    help='threshold for non max suppression IOU, default .5',
-    default=.5)
-parser.add_argument(
-    '-t',
-    '--test',
-    action='store_true',
-    help='suppress display, boxes painting: show box count and FPS')
-parser.add_argument(
-    '--no-label',
-    action='store_true',
-    help='supress drawing class and confidence labels next to boxes')
-parser.add_argument(
-    '--max-boxes',
-    type=int,
-    default=50,
-    help='max_boxes returned from yolo_eval'
-)
-parser.add_argument(
-    '--box-thickness',
-    type=int,
-    default=0,
-    help='thickness of drawn bounding boxes, in pixels'
-)
-parser.add_argument(
-    '--batch-size',
-    type=int,
-    default=1,
-    help='number of images in a single batch'
-)
-parser.add_argument(
-    '--fake-batch',
-    action='store_true',
-    help='repeat a single input frame --batch-size times (for testing performance)'
-)
-parser.add_argument(
-    '--rotation',
-    type=float,
-    default=0.,
-    help='rotation of images before processing in degrees counterclockwise'
-)
-parser.add_argument(
-    '--limit', '-n',
-    type=int,
-    default=0,
-    help='max number frames to process, 0 means no limit'
-)
-parser.add_argument(
-    '--downsample',
-    type=int,
-    default=0,
-    help='downsample input image N times (row and column stride)'
-)
-parser.add_argument(
-    '--skip-frames',
-    type=int,
-    default=0,
-    help='number of frames to skip at the beginning of capture'
-)
-parser.add_argument(
-    '--dump',
-    action='store_true',
-    help='save image and processed result'
-)
+parser = argparse.ArgumentParser(description='Run a YOLO_v2 style detection model on test images.')
+parser.add_argument('model_path', help='h5 file containing a YOLO_v2 model', default='model_data/yolo.h5')
+parser.add_argument('--source', '-i', help='video file path for OpenCV VideoCapture', default=0)
+parser.add_argument('-a', '--anchors_path', help='path to anchors file')
+parser.add_argument('-c', '--classes_path', help='path to classes file')
+parser.add_argument('-o', '--output_path', help='path to test output, defaults to images/out')
+parser.add_argument('-s', '--score_threshold', type=float, help='min objectness score [=.3]', default=.3)
+parser.add_argument('-iou', '--iou_threshold', type=float, help='max IOU for non max suppression [=.5]', default=.5)
+parser.add_argument('-t', '--test', action='store_true', help='suppress display, boxes painting: show box count and FPS')
+parser.add_argument('--no-label', action='store_true', help='supress drawing class and confidence labels next to boxes')
+parser.add_argument('--max-boxes', type=int, default=50, help='max_boxes returned from yolo_eval')
+parser.add_argument('--box-thickness', type=int, default=0, help='thickness of drawn bounding boxes, in pixels')
+parser.add_argument('--batch-size', type=int, default=1, help='number of images in a single batch')
+parser.add_argument('--fake-batch', action='store_true', help='repeat a single input frame --batch-size times (for testing performance)')
+parser.add_argument('--rotation', type=float, default=0., help='rotation of images before processing in degrees counterclockwise')
+parser.add_argument('--limit', '-n', type=int, default=0, help='max number frames to process, 0 means no limit')
+parser.add_argument('--downsample', type=int, default=0, help='downsample input image N times (row and column stride)')
+parser.add_argument('--skip-frames', type=int, default=0, help='number of frames to skip at the beginning of capture')
+parser.add_argument('--dump', action='store_true', help='save image and processed result')
 
 
 def rotate_image(image, angle):
@@ -132,6 +57,7 @@ def rotate_image(image, angle):
 
 class FPS:
     """Simple and naive frequency measurement."""
+
     def __init__(self, batch_size=1):
         self.start = None
         self.last = None
@@ -167,6 +93,7 @@ class FPS:
 
 class ImageDirectoryVideoCapture:
     """A mock of cv2.VideoCapture for reading image files from a directory."""
+
     def __init__(self, directory):
         self.directory = directory
         self.files = glob.iglob(os.path.join(self.directory, '*'))
@@ -200,34 +127,9 @@ def _main(args):
                 exit()
         print('Skipped', args.skip_frames, 'frames')
 
-    model_path = os.path.expanduser(args.model_path)
-    assert model_path.endswith('.h5'), 'Keras model must be a .h5 file.'
-    anchors_path = os.path.expanduser(args.anchors_path)
-    classes_path = os.path.expanduser(args.classes_path)
+    yolo_model, class_names, anchors = load_model(args.model_path, args.classes_path, args.anchors_path)
 
     sess = K.get_session()  # TODO: Remove dependence on Tensorflow session.
-
-    with open(classes_path) as f:
-        class_names = f.readlines()
-    class_names = [c.strip() for c in class_names]
-
-    with open(anchors_path) as f:
-        anchors = f.readline()
-        anchors = [float(x) for x in anchors.split(',')]
-        anchors = np.array(anchors).reshape(-1, 2)
-
-    yolo_model = load_model(model_path)
-
-    # Verify model, anchors, and classes are compatible
-    num_classes = len(class_names)
-    num_anchors = len(anchors)
-    # TODO: Assumes dim ordering is channel last
-    model_output_channels = yolo_model.layers[-1].output_shape[-1]
-    assert model_output_channels == num_anchors * (num_classes + 5), \
-        'Mismatch between model and given anchor and class sizes. ' \
-        'Specify matching anchors and classes with --anchors_path and ' \
-        '--classes_path flags.'
-    print('{} model, anchors, and classes loaded.'.format(model_path))
 
     # Check if model is fully convolutional, assuming channel last order.
     model_image_size = yolo_model.layers[0].input_shape[1:3]
@@ -259,7 +161,7 @@ def _main(args):
         iou_threshold=args.iou_threshold)
 
     fps = FPS(args.batch_size)
-    frame_idx_generator = range(1, args.limit+1) if args.limit > 0 else count(1)
+    frame_idx_generator = range(1, args.limit + 1) if args.limit > 0 else count(1)
     batch = []
 
     for frame_idx in frame_idx_generator:
