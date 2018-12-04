@@ -51,17 +51,17 @@ def bottleneck_x2_block(outer_filters, bottleneck_filters):
 def darknet_body():
     """Generate first 18 conv layers of Darknet-19."""
     return compose(
-        DarknetConv2D_BN_Leaky(32, (3, 3)),
-        MaxPooling2D(),
-        DarknetConv2D_BN_Leaky(64, (3, 3)),
-        MaxPooling2D(),
-        bottleneck_block(128, 64),
-        MaxPooling2D(),
-        bottleneck_block(256, 128),
-        MaxPooling2D(),
-        bottleneck_x2_block(512, 256),
-        MaxPooling2D(),
-        bottleneck_x2_block(1024, 512))
+        DarknetConv2D_BN_Leaky(32, (3, 3)), # 0-2
+        MaxPooling2D(), # 3
+        DarknetConv2D_BN_Leaky(64, (3, 3)), # 4-6
+        MaxPooling2D(), # 7
+        bottleneck_block(128, 64), # 3*3, 7-15
+        MaxPooling2D(), # 16
+        bottleneck_block(256, 128), # 17-25
+        MaxPooling2D(), # 18
+        bottleneck_x2_block(512, 256), # 3*5, 26-40
+        MaxPooling2D(), # 41
+        bottleneck_x2_block(1024, 512)) # 42-56
 
 
 def darknet19(inputs):
