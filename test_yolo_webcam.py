@@ -28,7 +28,9 @@ parser.add_argument('-o', '--output_path', help='path to test output, defaults t
 parser.add_argument('-s', '--score_threshold', type=float, help='min objectness score [=.3]', default=.3)
 parser.add_argument('-iou', '--iou_threshold', type=float, help='max IOU for non max suppression [=.5]', default=.5)
 parser.add_argument('-t', '--test', action='store_true', help='suppress display, boxes painting: show box count and FPS')
-parser.add_argument('--no-label', action='store_true', help='supress drawing class and confidence labels next to boxes')
+parser.add_argument('--nobgr', action='store_true', help='turn off BGR->RGB conversion for images')
+parser.add_argument('--no-label', action='store_true', help='draw boxes without class labels')
+parser.add_argument('--original', action='store_true', help='show original image also')
 parser.add_argument('--max-boxes', type=int, default=50, help='max_boxes returned from yolo_eval')
 parser.add_argument('--box-thickness', type=int, default=0, help='thickness of drawn bounding boxes, in pixels')
 parser.add_argument('--batch-size', type=int, default=1, help='number of images in a single batch')
@@ -58,12 +60,13 @@ def _main(args):
         print('Skipped', args.skip_frames, 'frames')
 
     yolo_model, class_names, anchors = load_model(args.model_path, args.classes_path, args.anchors_path)
-
-    sess = K.get_session()  # TODO: Remove dependence on Tensorflow session.
-
     # Check if model is fully convolutional, assuming channel last order.
     model_image_size = yolo_model.layers[0].input_shape[1:3]
+    print('Model image size:', model_image_size)
     is_fixed_size = model_image_size != (None, None)
+    print('Fixed size model found.' if is_fixed_size else 'Variable, quantized size model.')
+
+    sess = K.get_session()  # TODO: Remove dependence on Tensorflow session.
 
     if not args.test:
         font = None
@@ -122,7 +125,11 @@ def _main(args):
 
         h, w = cv_image.shape[:2]
 
-        image_data = cv_image.astype(np.float)
+        image_data = cv_image
+        # thanks, Mateusz! Heard about it so many times, and still fell for it!
+        if not args.nobgr:
+            image_data = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB).astype(np.float)
+        image_data = image_data.astype(np.float)
         image_data /= 255.
 
         # prepare input batch
@@ -203,7 +210,8 @@ def _main(args):
 
         cv_image2 = cv2.resize(np.array(image), (in_w, in_h))
         cv2.imshow('Yolo2', cv_image2)
-        cv2.imshow('Original', original)
+        if args.original:
+            cv2.imshow('Original', original)
         if args.dump and len(out_boxes):
             cv2.imwrite('frame_{:.2f}.jpg'.format(time.time()), original)
             cv2.imwrite('yolo_{:.2f}.jpg'.format(time.time()), cv_image2)
