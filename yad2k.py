@@ -85,7 +85,6 @@ def _main(args):
     else:
         seen = np.ndarray(shape=(1,), dtype='int32', buffer=weights_file.read(4))
     print('Weights Header: ', weights_header, 'seen', seen)
-    exit()
 
     # TODO: Check transpose flag when implementing fully connected layers.
     # transpose = (weight_header[0] > 1000) or (weight_header[1] > 1000)
@@ -244,6 +243,10 @@ def _main(args):
         elif section.startswith('region'):
             with open('{}_anchors.txt'.format(output_root), 'w') as f:
                 print(cfg_parser[section]['anchors'], file=f)
+
+            with open('{}_classes.txt'.format(output_root), 'w') as f:
+                for i in range(int(cfg_parser[section]['classes'])):
+                    f.write('class{}\n'.format(i))
 
         elif (section.startswith('net') or section.startswith('cost') or
               section.startswith('softmax')):
