@@ -9,7 +9,6 @@ import random
 
 import numpy as np
 from keras import backend as K
-from keras.models import load_model
 from PIL import Image, ImageDraw, ImageFont
 
 from yad2k.models.keras_yolo import yolo_eval, yolo_head
@@ -108,7 +107,7 @@ def _main(args):
         print('Found {} boxes for {}'.format(len(out_boxes), image_file))
 
         font = ImageFont.truetype(
-            font='font/FiraMono-Medium.otf',
+            font=os.path.join(os.path.dirname(__file__), 'font', 'FiraMono-Medium.otf'),
             size=np.floor(3e-2 * image.size[1] + 0.5).astype('int32'))
         thickness = (image.size[0] + image.size[1]) // 300
 

@@ -167,7 +167,7 @@ def _main(args):
 
         if font is None:
             font = ImageFont.truetype(
-                font='font/FiraMono-Medium.otf',
+                font=os.path.join(os.path.dirname(__file__), 'font', 'FiraMono-Medium.otf'),
                 size=np.floor(3e-2 * h + 0.5).astype('int32'))
 
         thickness = args.box_thickness or (w + h) // 300
