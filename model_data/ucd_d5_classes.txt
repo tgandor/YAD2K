@@ -1,6 +1,0 @@
-reclined
-person
-car
-motorcycle
-bus
-truck

@@ -40,6 +40,7 @@ parser.add_argument('--limit', '-n', type=int, default=0, help='max number frame
 parser.add_argument('--downsample', type=int, default=0, help='downsample input image N times (row and column stride)')
 parser.add_argument('--skip-frames', type=int, default=0, help='number of frames to skip at the beginning of capture')
 parser.add_argument('--dump', action='store_true', help='save image and processed result')
+parser.add_argument('--wait', '-w', type=int, default=1, help='argument for cv2.waitKey()')
 
 
 def _main(args):
@@ -215,7 +216,7 @@ def _main(args):
         if args.dump and len(out_boxes):
             cv2.imwrite('frame_{:.2f}.jpg'.format(time.time()), original)
             cv2.imwrite('yolo_{:.2f}.jpg'.format(time.time()), cv_image2)
-        key = cv2.waitKey(1)
+        key = cv2.waitKey(args.wait)
         if key & 0xff == ord('q'):
             break
     sess.close()
