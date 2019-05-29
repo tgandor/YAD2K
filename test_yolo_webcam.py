@@ -1,23 +1,13 @@
 #! /usr/bin/env python
 """Run a YOLO_v2 style detection model on test images."""
 import argparse
-import colorsys
+import datetime
 import os
 import random
 import re
 import time
 
 from itertools import count
-
-import cv2
-import numpy as np
-
-from keras import backend as K
-from yad2k.models.utils import load_model
-from PIL import Image, ImageDraw, ImageFont
-
-from yad2k.models.keras_yolo import yolo_eval, yolo_head
-from yad2k.utils.video import rotate_image, FPS, ImageDirectoryVideoCapture
 
 parser = argparse.ArgumentParser(description='Run a YOLO_v2 style detection model on test images.')
 parser.add_argument('model_path', help='h5 file containing a YOLO_v2 model', default='model_data/yolo.h5')
@@ -41,9 +31,15 @@ parser.add_argument('--downsample', type=int, default=0, help='downsample input 
 parser.add_argument('--skip-frames', type=int, default=0, help='number of frames to skip at the beginning of capture')
 parser.add_argument('--dump', action='store_true', help='save image and processed result')
 parser.add_argument('--wait', '-w', type=int, default=1, help='argument for cv2.waitKey()')
+parser.add_argument('--dump-all', action='store_true', help='save all images even if no objects')
 
 
 def _main(args):
+    start = datetime.datetime.now()
+    wall = lambda: datetime.datetime.now() - start
+
+    import cv2
+
     if os.path.isdir(str(args.source)):
         cap = ImageDirectoryVideoCapture(args.source)
     elif re.match(r'\d+$', str(args.source)):
@@ -51,21 +47,32 @@ def _main(args):
     else:
         cap = cv2.VideoCapture(args.source)
 
+    print(wall(), 'Capture', args.source, 'opened. Loading Keras...')
+
+    import colorsys
+    import numpy as np
+    from keras import backend as K
+    from yad2k.models.utils import load_model
+    from PIL import Image, ImageDraw, ImageFont
+
+    from yad2k.models.keras_yolo import yolo_eval, yolo_head
+    from yad2k.utils.video import rotate_image, FPS, ImageDirectoryVideoCapture
+
     if args.skip_frames > 0:
         for i in range(args.skip_frames):
             status, frame = cap.read()
             if not status:
                 cap.close()
-                print('Failed acquisition while skipping initial frames, on frame', i)
+                print(wall(), 'Failed acquisition while skipping initial frames, on frame', i)
                 exit()
-        print('Skipped', args.skip_frames, 'frames')
+        print(wall(), 'Skipped', args.skip_frames, 'frames')
 
     yolo_model, class_names, anchors = load_model(args.model_path, args.classes_path, args.anchors_path)
     # Check if model is fully convolutional, assuming channel last order.
     model_image_size = yolo_model.layers[0].input_shape[1:3]
-    print('Model image size:', model_image_size)
+    print(wall(), 'Model image size:', model_image_size)
     is_fixed_size = model_image_size != (None, None)
-    print('Fixed size model found.' if is_fixed_size else 'Variable, quantized size model.')
+    print(wall(), 'Fixed size model found.' if is_fixed_size else 'Variable, quantized size model.')
 
     sess = K.get_session()  # TODO: Remove dependence on Tensorflow session.
 
@@ -98,11 +105,13 @@ def _main(args):
     frame_idx_generator = range(1, args.limit + 1) if args.limit > 0 else count(1)
     batch = []
 
+    print(wall(), 'Entering main loop.')
+
     for frame_idx in frame_idx_generator:
         ret, cv_image = cap.read()
 
         if not ret or cv_image is None:
-            print('Error grabbing:', ret, cv_image)
+            print(wall(), 'Error grabbing:', ret, cv_image)
             break
 
         # preprocessing
@@ -164,7 +173,7 @@ def _main(args):
             continue
 
         # report results
-        print('Found {} boxes for frame {}'.format(len(out_boxes), frame_idx))
+        print(wall(), 'Found {} boxes for frame {}'.format(len(out_boxes), frame_idx))
 
         if font is None:
             font = ImageFont.truetype(
@@ -213,7 +222,7 @@ def _main(args):
         cv2.imshow('Yolo2', cv_image2)
         if args.original:
             cv2.imshow('Original', original)
-        if args.dump and len(out_boxes):
+        if args.dump and (len(out_boxes) or args.dump_all):
             cv2.imwrite('frame_{:.2f}.jpg'.format(time.time()), original)
             cv2.imwrite('yolo_{:.2f}.jpg'.format(time.time()), cv_image2)
         key = cv2.waitKey(args.wait)

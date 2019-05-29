@@ -10,17 +10,6 @@ from keras.regularizers import l2
 
 from ..utils import compose
 
-# Partial wrapper for Convolution2D with static default argument.
-_DarknetConv2D = partial(Conv2D, padding='same')
-
-
-@functools.wraps(Conv2D)
-def DarknetConv2D(*args, **kwargs):
-    """Wrapper to set Darknet weight regularizer for Convolution2D."""
-    darknet_conv_kwargs = {'kernel_regularizer': l2(5e-4)}
-    darknet_conv_kwargs.update(kwargs)
-    return _DarknetConv2D(*args, **darknet_conv_kwargs)
-
 
 def DarknetConv2D_BN_Leaky(*args, **kwargs):
     """Darknet Convolution2D followed by BatchNormalization and LeakyReLU."""
@@ -31,6 +20,7 @@ def DarknetConv2D_BN_Leaky(*args, **kwargs):
     )
 
 
+'''
 def DarknetConv2D_BN_Leaky(*args, **kwargs):
     """Darknet Convolution2D followed by BatchNormalization and LeakyReLU."""
     no_bias_kwargs = {'use_bias': False}
@@ -39,6 +29,7 @@ def DarknetConv2D_BN_Leaky(*args, **kwargs):
         DarknetConv2D(*args, **no_bias_kwargs),
         BatchNormalization(),
         LeakyReLU(alpha=0.1))
+'''
 
 
 def bottleneck_block(outer_filters, bottleneck_filters):
