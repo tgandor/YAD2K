@@ -39,6 +39,7 @@ def _main(args):
     wall = lambda: datetime.datetime.now() - start
 
     import cv2
+    from yad2k.utils.video import rotate_image, FPS, ImageDirectoryVideoCapture
 
     if os.path.isdir(str(args.source)):
         cap = ImageDirectoryVideoCapture(args.source)
@@ -56,7 +57,6 @@ def _main(args):
     from PIL import Image, ImageDraw, ImageFont
 
     from yad2k.models.keras_yolo import yolo_eval, yolo_head
-    from yad2k.utils.video import rotate_image, FPS, ImageDirectoryVideoCapture
 
     if args.skip_frames > 0:
         for i in range(args.skip_frames):
