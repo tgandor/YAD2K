@@ -23,6 +23,7 @@ parser.add_argument('-o', '--output_path', help='path to test output, defaults t
 parser.add_argument('-s', '--score_threshold', type=float, help='min objectness score [=.3]', default=.3)
 parser.add_argument('-iou', '--iou_threshold', type=float, help='max IOU for non max suppression [=.5]', default=.5)
 parser.add_argument('--gpu', help='specify GPU to use (0, 1, etc.)')
+parser.add_argument('--text', action='store_true', help='output .txt detection results (Cartucho format)')
 
 
 def _main(args):
@@ -145,6 +146,25 @@ def _main(args):
             del draw
 
         image.save(os.path.join(output_path, image_file), quality=90)
+
+        if args.text:
+            # TODO - factor out!
+            name, _ = os.path.splitext(image_file)
+            text_file = name + '.txt'
+            with open(os.path.join(output_path, text_file), 'w') as detection_file:
+                for i, c in reversed(list(enumerate(out_classes))):
+                    predicted_class = class_names[c]
+                    box = out_boxes[i]
+                    score = out_scores[i]
+
+                    top, left, bottom, right = box
+                    top = max(0, np.floor(top + 0.5).astype('int32'))
+                    left = max(0, np.floor(left + 0.5).astype('int32'))
+                    bottom = min(image.size[1], np.floor(bottom + 0.5).astype('int32'))
+                    right = min(image.size[0], np.floor(right + 0.5).astype('int32'))
+
+                    detection_file.write(f'{predicted_class} {score:.6f} {left} {top} {right} {bottom}\n')
+
     sess.close()
 
 
