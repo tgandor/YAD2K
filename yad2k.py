@@ -66,14 +66,12 @@ def unique_config_sections(config_file):
 def _main(args):
     config_path = os.path.expanduser(args.config_path)
     weights_path = os.path.expanduser(args.weights_path)
-    assert config_path.endswith('.cfg'), '{} is not a .cfg file'.format(
-        config_path)
-    assert weights_path.endswith(
-        '.weights'), '{} is not a .weights file'.format(weights_path)
-
     output_path = os.path.expanduser(args.output_path)
-    assert output_path.endswith(
-        '.h5'), 'output path {} is not a .h5 file'.format(output_path)
+
+    assert config_path.endswith('.cfg'), '{} is not a .cfg file'.format(config_path)
+    assert (weights_path.endswith('.weights') or weights_path.endswith('.backup')), '{} is not a .weights file'.format(weights_path)
+    assert output_path.endswith('.h5'), 'output path {} is not a .h5 file'.format(output_path)
+
     output_root = os.path.splitext(output_path)[0]
 
     # Load weights and config.
@@ -261,6 +259,7 @@ def _main(args):
     print(model.summary())
     model.save('{}'.format(output_path))
     print('Saved Keras model to {}'.format(output_path))
+
     # Check to see if all weights have been read.
     remaining_weights = len(weights_file.read()) / 4
     weights_file.close()

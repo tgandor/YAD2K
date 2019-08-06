@@ -22,12 +22,13 @@ parser.add_argument('--nobgr', action='store_true', help='turn off BGR->RGB conv
 parser.add_argument('--no-label', action='store_true', help='draw boxes without class labels')
 parser.add_argument('--original', action='store_true', help='show original image also')
 parser.add_argument('--max-boxes', type=int, default=50, help='max_boxes returned from yolo_eval')
-parser.add_argument('--box-thickness', type=int, default=0, help='thickness of drawn bounding boxes, in pixels')
+parser.add_argument('--box-thickness', type=int, default=1, help='thickness of drawn bounding boxes, in pixels')
 parser.add_argument('--batch-size', type=int, default=1, help='number of images in a single batch')
 parser.add_argument('--fake-batch', action='store_true', help='repeat a single input frame --batch-size times (for testing performance)')
 parser.add_argument('--rotation', type=float, default=0., help='rotation of images before processing in degrees counterclockwise')
 parser.add_argument('--limit', '-n', type=int, default=0, help='max number frames to process, 0 means no limit')
 parser.add_argument('--downsample', type=int, default=0, help='downsample input image N times (row and column stride)')
+parser.add_argument('--square-crop', type=int, default=0, help='cut out a NxN square of the image (for fixed size testing)')
 parser.add_argument('--skip-frames', type=int, default=0, help='number of frames to skip at the beginning of capture')
 parser.add_argument('--dump', action='store_true', help='save image and processed result')
 parser.add_argument('--wait', '-w', type=int, default=1, help='argument for cv2.waitKey()')
@@ -53,7 +54,7 @@ def _main(args):
     import colorsys
     import numpy as np
     from keras import backend as K
-    from yad2k.models.utils import load_model
+    from yad2k.models import utils
     from PIL import Image, ImageDraw, ImageFont
 
     from yad2k.models.keras_yolo import yolo_eval, yolo_head
@@ -67,12 +68,13 @@ def _main(args):
                 exit()
         print(wall(), 'Skipped', args.skip_frames, 'frames')
 
-    yolo_model, class_names, anchors = load_model(args.model_path, args.classes_path, args.anchors_path)
+    yolo_model, class_names, anchors = utils.load_model(args.model_path, args.classes_path, args.anchors_path)
     # Check if model is fully convolutional, assuming channel last order.
     model_image_size = yolo_model.layers[0].input_shape[1:3]
     print(wall(), 'Model image size:', model_image_size)
     is_fixed_size = model_image_size != (None, None)
     print(wall(), 'Fixed size model found.' if is_fixed_size else 'Variable, quantized size model.')
+    print(wall(), 'Anchors:', anchors)
 
     sess = K.get_session()  # TODO: Remove dependence on Tensorflow session.
 
@@ -118,6 +120,9 @@ def _main(args):
         if args.downsample > 1:
             cv_image = cv_image[::args.downsample, ::args.downsample]
 
+        if args.square_crop:
+            cv_image = cv_image[:args.square_crop, :args.square_crop]
+
         if args.rotation != 0.:
             cv_image = rotate_image(cv_image, args.rotation)
 
@@ -139,6 +144,7 @@ def _main(args):
         # thanks, Mateusz! Heard about it so many times, and still fell for it!
         if not args.nobgr:
             image_data = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB).astype(np.float)
+
         image_data = image_data.astype(np.float)
         image_data /= 255.
 
@@ -157,13 +163,15 @@ def _main(args):
             image_data = np.stack([image_data] * args.batch_size)
 
         # actual yolo processing
-        out_boxes, out_scores, out_classes = sess.run(
-            [boxes, scores, classes],
+        out_boxes, out_scores, out_classes, raw_output = sess.run(
+            [boxes, scores, classes, yolo_model.output],
             feed_dict={
                 yolo_model.input: image_data,
                 input_image_shape: [w, h],
                 K.learning_phase(): 0
             })
+
+        print('Raw', raw_output.shape, 'first cell:', raw_output[0, 0, 0].reshape(len(anchors), -1))
 
         # measure performance
         fps.tick()
@@ -182,6 +190,8 @@ def _main(args):
 
         thickness = args.box_thickness or (w + h) // 300
 
+        # image = Image.fromarray(original)
+        # we should stick to relative coordinates 0..1
         image = Image.fromarray(cv_image)
 
         for i, c in reversed(list(enumerate(out_classes))):
