@@ -1,8 +1,10 @@
 #! /usr/bin/env python
 """Run a YOLO_v2 style detection model on test images."""
+
 import argparse
 import datetime
 import os
+import pprint
 import random
 import re
 import time
@@ -10,29 +12,40 @@ import time
 from itertools import count
 
 parser = argparse.ArgumentParser(description='Run a YOLO_v2 style detection model on test images.')
+
 parser.add_argument('model_path', help='h5 file containing a YOLO_v2 model', default='model_data/yolo.h5')
+parser.add_argument('-a', '--anchors-path', help='path to anchors file')
+parser.add_argument('-c', '--classes-path', help='path to classes file')
+
 parser.add_argument('--source', '-i', help='video file path for OpenCV VideoCapture', default=0)
-parser.add_argument('-a', '--anchors_path', help='path to anchors file')
-parser.add_argument('-c', '--classes_path', help='path to classes file')
-parser.add_argument('-o', '--output_path', help='path to test output, defaults to images/out')
-parser.add_argument('-s', '--score_threshold', type=float, help='min objectness score [=.3]', default=.3)
-parser.add_argument('-iou', '--iou_threshold', type=float, help='max IOU for non max suppression [=.5]', default=.5)
+parser.add_argument('-o', '--output-path', help='path to test output, defaults to images/out')
+
+parser.add_argument('-s', '--score-threshold', type=float, help='min objectness score [=.3]', default=.5)
+parser.add_argument('-iou', '--iou-threshold', type=float, help='max IOU for non max suppression [=.5]', default=.5)
+parser.add_argument('--max-boxes', type=int, default=50, help='max_boxes returned from yolo_eval')
+
 parser.add_argument('-t', '--test', action='store_true', help='suppress display, boxes painting: show box count and FPS')
+
 parser.add_argument('--nobgr', action='store_true', help='turn off BGR->RGB conversion for images')
 parser.add_argument('--no-label', action='store_true', help='draw boxes without class labels')
-parser.add_argument('--original', action='store_true', help='show original image also')
-parser.add_argument('--max-boxes', type=int, default=50, help='max_boxes returned from yolo_eval')
+
 parser.add_argument('--box-thickness', type=int, default=1, help='thickness of drawn bounding boxes, in pixels')
+parser.add_argument('--original', action='store_true', help='resize yolo output to original size when showing')
+
 parser.add_argument('--batch-size', type=int, default=1, help='number of images in a single batch')
 parser.add_argument('--fake-batch', action='store_true', help='repeat a single input frame --batch-size times (for testing performance)')
-parser.add_argument('--rotation', type=float, default=0., help='rotation of images before processing in degrees counterclockwise')
-parser.add_argument('--limit', '-n', type=int, default=0, help='max number frames to process, 0 means no limit')
-parser.add_argument('--downsample', type=int, default=0, help='downsample input image N times (row and column stride)')
-parser.add_argument('--square-crop', type=int, default=0, help='cut out a NxN square of the image (for fixed size testing)')
+
 parser.add_argument('--skip-frames', type=int, default=0, help='number of frames to skip at the beginning of capture')
+parser.add_argument('--limit', '-n', type=int, default=0, help='max number frames to process, 0 means no limit')
+
+parser.add_argument('--downsample', type=int, default=0, help='downsample input image N times (row and column stride)')
+parser.add_argument('--rotation', type=float, default=0., help='rotation of images before processing in degrees counterclockwise')
+parser.add_argument('--square-crop', type=int, default=0, help='cut out a NxN square of the image (for fixed size testing)')
+
 parser.add_argument('--dump', action='store_true', help='save image and processed result')
-parser.add_argument('--wait', '-w', type=int, default=1, help='argument for cv2.waitKey()')
 parser.add_argument('--dump-all', action='store_true', help='save all images even if no objects')
+
+parser.add_argument('--wait', '-w', type=int, default=1, help='argument for cv2.waitKey(), 0 for pause every frame')
 
 
 def _main(args):
@@ -41,6 +54,7 @@ def _main(args):
 
     import cv2
     from yad2k.utils.video import rotate_image, FPS, ImageDirectoryVideoCapture
+    from yad2k.eager_head import filter_anchors
 
     if os.path.isdir(str(args.source)):
         cap = ImageDirectoryVideoCapture(args.source)
@@ -137,8 +151,7 @@ def _main(args):
         if is_fixed_size:
             cv_image = cv2.resize(cv_image, tuple(reversed(model_image_size)))
         else:
-            new_image_size = (in_w - (in_w % 32),
-                              in_h - (in_h % 32))
+            new_image_size = (in_w - (in_w % 32), in_h - (in_h % 32))
             cv_image = cv2.resize(cv_image, new_image_size)
 
         h, w = cv_image.shape[:2]
@@ -174,20 +187,26 @@ def _main(args):
                 K.learning_phase(): 0
             })
 
+        """
         print('Raw, shape:', raw_output.shape)
-        print('[x y w h objectness ' + ' '.join(class_names) + ']', 'first cell:')
+        print('[x y w h objectness ' + ' '.join(class_names) + ']', 'first anchor:')
         out_anchors_split = raw_output.reshape(raw_output.shape[1:-1] + (len(anchors), -1))
         # print(raw_output[0, 0, 0].reshape(len(anchors), -1))
-        print(out_anchors_split[0, 0]) # cell (0, 0)
+        print(out_anchors_split[0, 0, 0]) # cell (0, 0), anchor 0
 
         # np.save('raw_{}.pkl'.format(frame_idx), raw_output)
         objectnesses = out_anchors_split[:, :, :, 4]
         flat_index = np.argmax(objectnesses)
         index = np.unravel_index(flat_index, objectnesses.shape)
         print('Max objectness', objectnesses[index], ' in cell (x, y, anchor):', index)
+        max_class_index = np.argmax(out_anchors_split[index][5:])
+        print('For class', max_class_index, '=', class_names[max_class_index])
 
         #print(raw_output[0][index[:-1]].reshape(len(anchors), -1))
-        print(out_anchors_split[index[:-1]])  # cell with the anchor of max objectness
+        print(out_anchors_split[index])  # cell with the anchor of max objectness
+        """
+
+        pprint.pprint(filter_anchors(raw_output, anchors, args.score_threshold), width=160)
 
         # measure performance
         fps.tick()
@@ -244,16 +263,19 @@ def _main(args):
                 draw.text(text_origin, label, fill=(0, 0, 0), font=font)
             del draw
 
-        cv_image2 = cv2.resize(np.array(image), (in_w, in_h))
-        cv2.imshow('Yolo2', cv_image2)
+        cv_image2 = np.array(image)
         if args.original:
-            cv2.imshow('Original', original)
+            cv_image = cv2.resize(cv_image, (in_w, in_h))
+        cv2.imshow('Yolo2', cv_image2)
+
         if args.dump and (len(out_boxes) or args.dump_all):
             cv2.imwrite('frame_{:.2f}.jpg'.format(time.time()), original)
             cv2.imwrite('yolo_{:.2f}.jpg'.format(time.time()), cv_image2)
+
         key = cv2.waitKey(args.wait)
         if key & 0xff == ord('q'):
             break
+
     sess.close()
 
 

@@ -9,7 +9,7 @@ from keras.layers.merge import concatenate
 from keras.models import Model
 
 from ..utils import compose
-from .keras_darknet19 import DarknetConv2D_BN_Leaky, darknet_body
+from .keras_darknet19 import DarknetConv2D_BN_Leaky, DarknetConv2D, darknet_body
 
 sys.path.append('..')
 
@@ -95,7 +95,8 @@ def yolo_head(feats, anchors, num_classes):
     # conv_dims = K.variable([conv_width, conv_height])
 
     # Dynamic implementation of conv dims for fully convolutional model.
-    conv_dims = K.shape(feats)[1:3]  # assuming channels last
+    # shape: [1, height, width, channels]
+    conv_dims = K.gather(K.shape(feats), [2, 1])  # assuming channels last
     # In YOLO the height index is the inner most iteration.
     conv_height_index = K.arange(0, stop=conv_dims[0])
     conv_width_index = K.arange(0, stop=conv_dims[1])
@@ -107,11 +108,10 @@ def yolo_head(feats, anchors, num_classes):
         K.expand_dims(conv_width_index, 0), [conv_dims[0], 1])
     conv_width_index = K.flatten(K.transpose(conv_width_index))
     conv_index = K.transpose(K.stack([conv_height_index, conv_width_index]))
-    conv_index = K.reshape(conv_index, [1, conv_dims[0], conv_dims[1], 1, 2])
+    conv_index = K.reshape(conv_index, [1, conv_dims[1], conv_dims[0], 1, 2])
     conv_index = K.cast(conv_index, K.dtype(feats))
 
-    feats = K.reshape(
-        feats, [-1, conv_dims[0], conv_dims[1], num_anchors, num_classes + 5])
+    feats = K.reshape(feats, [-1, conv_dims[1], conv_dims[0], num_anchors, num_classes + 5])
     conv_dims = K.cast(K.reshape(conv_dims, [1, 1, 1, 1, 2]), K.dtype(feats))
 
     # Static generation of conv_index:

@@ -11,25 +11,19 @@ from keras.regularizers import l2
 from ..utils import compose
 
 
-def DarknetConv2D_BN_Leaky(*args, **kwargs):
-    """Darknet Convolution2D followed by BatchNormalization and LeakyReLU."""
-    return compose(
-        Conv2D(*args, padding="same", use_bias=False, kernel_regularizer=l2(5e-4), **kwargs),
-        BatchNormalization(),
-        LeakyReLU(alpha=0.1)
-    )
+def DarknetConv2D(*args, **kwargs):
+    return Conv2D(*args, padding="same", kernel_regularizer=l2(5e-4), **kwargs)
 
 
-'''
 def DarknetConv2D_BN_Leaky(*args, **kwargs):
     """Darknet Convolution2D followed by BatchNormalization and LeakyReLU."""
     no_bias_kwargs = {'use_bias': False}
     no_bias_kwargs.update(kwargs)
     return compose(
-        DarknetConv2D(*args, **no_bias_kwargs),
+        DarknetConv2D(*args, **kwargs),
         BatchNormalization(),
-        LeakyReLU(alpha=0.1))
-'''
+        LeakyReLU(alpha=0.1)
+    )
 
 
 def bottleneck_block(outer_filters, bottleneck_filters):

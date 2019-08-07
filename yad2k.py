@@ -32,12 +32,12 @@ parser.add_argument('weights_path', help='Path to Darknet weights file.')
 parser.add_argument('output_path', help='Path to output Keras model file.')
 parser.add_argument(
     '-p',
-    '--plot_model',
+    '--plot-model',
     help='Plot generated Keras model and save as image.',
     action='store_true')
 parser.add_argument(
-    '-flcl',
-    '--fully_convolutional',
+    '-fcnv',
+    '--fully-convolutional',
     help='Model is fully convolutional so set input shape to (None, None, 3). '
     'WARNING: This experimental option does not work properly for YOLO_v2.',
     action='store_true')
