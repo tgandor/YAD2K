@@ -59,6 +59,8 @@ def _main(args):
 
     from yad2k.models.keras_yolo import yolo_eval, yolo_head
 
+    np.set_printoptions(precision=3, linewidth=160)
+
     if args.skip_frames > 0:
         for i in range(args.skip_frames):
             status, frame = cap.read()
@@ -74,7 +76,8 @@ def _main(args):
     print(wall(), 'Model image size:', model_image_size)
     is_fixed_size = model_image_size != (None, None)
     print(wall(), 'Fixed size model found.' if is_fixed_size else 'Variable, quantized size model.')
-    print(wall(), 'Anchors:', anchors)
+    print(wall(), 'Anchors:')
+    print(anchors)
 
     sess = K.get_session()  # TODO: Remove dependence on Tensorflow session.
 
@@ -171,7 +174,20 @@ def _main(args):
                 K.learning_phase(): 0
             })
 
-        print('Raw', raw_output.shape, 'first cell:', raw_output[0, 0, 0].reshape(len(anchors), -1))
+        print('Raw, shape:', raw_output.shape)
+        print('[x y w h objectness ' + ' '.join(class_names) + ']', 'first cell:')
+        out_anchors_split = raw_output.reshape(raw_output.shape[1:-1] + (len(anchors), -1))
+        # print(raw_output[0, 0, 0].reshape(len(anchors), -1))
+        print(out_anchors_split[0, 0]) # cell (0, 0)
+
+        # np.save('raw_{}.pkl'.format(frame_idx), raw_output)
+        objectnesses = out_anchors_split[:, :, :, 4]
+        flat_index = np.argmax(objectnesses)
+        index = np.unravel_index(flat_index, objectnesses.shape)
+        print('Max objectness', objectnesses[index], ' in cell (x, y, anchor):', index)
+
+        #print(raw_output[0][index[:-1]].reshape(len(anchors), -1))
+        print(out_anchors_split[index[:-1]])  # cell with the anchor of max objectness
 
         # measure performance
         fps.tick()
