@@ -206,7 +206,8 @@ def _main(args):
         print(out_anchors_split[index])  # cell with the anchor of max objectness
         """
 
-        pprint.pprint(filter_anchors(raw_output, anchors, args.score_threshold), width=160)
+        my_boxes = filter_anchors(raw_output, anchors, args.score_threshold)
+        pprint.pprint(my_boxes, width=160)
 
         # measure performance
         fps.tick()
@@ -229,12 +230,20 @@ def _main(args):
         # we should stick to relative coordinates 0..1
         image = Image.fromarray(cv_image)
 
+        # not going into draw scope just for now...
+        for i, b in enumerate(my_boxes[0]):
+            draw = ImageDraw.Draw(image)
+            x, y = b.box_center * np.array([w, h])
+            r = 4
+            draw.ellipse((x-r, y-r, x+r, y+r), fill=(255, 0, 255, 255))
+            del draw
+
         for i, c in reversed(list(enumerate(out_classes))):
             predicted_class = class_names[c]
             box = out_boxes[i]
             score = out_scores[i]
 
-            label = '{} {:.2f}'.format(predicted_class, score)
+            label = '{} {:.3f}'.format(predicted_class, score)
 
             draw = ImageDraw.Draw(image)
             label_size = draw.textsize(label, font)
@@ -244,7 +253,10 @@ def _main(args):
             left = max(0, np.floor(left + 0.5).astype('int32'))
             bottom = min(h, np.floor(bottom + 0.5).astype('int32'))
             right = min(w, np.floor(right + 0.5).astype('int32'))
-            print(label, (left, top), (right, bottom))
+
+            c_x = (left + right) / 2 / w
+            c_y = (top+bottom) / 2 / h
+            print(label, (left, top), (right, bottom), 'center: ({:.3f}, {:.3f})'.format(c_x, c_y))
 
             if top - label_size[1] >= 0:
                 text_origin = np.array([left, top - label_size[1]])
