@@ -31,6 +31,7 @@ parser.add_argument('--no-label', action='store_true', help='draw boxes without 
 
 parser.add_argument('--box-thickness', type=int, default=1, help='thickness of drawn bounding boxes, in pixels')
 parser.add_argument('--original', action='store_true', help='resize yolo output to original size when showing')
+parser.add_argument('--new-boxes', '-ab', action='store_true', help='show "new boxes", which are not yet NMS-ed.')
 
 parser.add_argument('--batch-size', type=int, default=1, help='number of images in a single batch')
 parser.add_argument('--fake-batch', action='store_true', help='repeat a single input frame --batch-size times (for testing performance)')
@@ -206,8 +207,15 @@ def _main(args):
         print(out_anchors_split[index])  # cell with the anchor of max objectness
         """
 
-        my_boxes = filter_anchors(raw_output, anchors, args.score_threshold)
-        pprint.pprint(my_boxes, width=160)
+        my_boxes_batch = filter_anchors(raw_output, anchors, args.score_threshold)
+
+        for img_idx, my_boxes in enumerate(my_boxes_batch):
+            print('On image {} of {} in batch'.format(img_idx+1, len(my_boxes_batch)))
+
+            for i, box in enumerate(my_boxes):
+                # print(i, class_names[box.class_idx], 'score =', box.score, box.corners(w, h).flatten(), 'for (w, h) =', (w, h))
+                print(box)
+                print(box.corners(w, h), 'for (w, h) = ', (w, h))
 
         # measure performance
         fps.tick()
@@ -231,12 +239,16 @@ def _main(args):
         image = Image.fromarray(cv_image)
 
         # not going into draw scope just for now...
-        for i, b in enumerate(my_boxes[0]):
-            draw = ImageDraw.Draw(image)
-            x, y = b.box_center * np.array([w, h])
-            r = 4
-            draw.ellipse((x-r, y-r, x+r, y+r), fill=(255, 0, 255, 255))
-            del draw
+        if args.new_boxes:
+            for i, b in enumerate(my_boxes_batch[0]):
+                draw = ImageDraw.Draw(image)
+                x, y = b.box_center * np.array([w, h])
+                r = 4
+                draw.ellipse((x-r, y-r, x+r, y+r), fill=(255, 0, 255, 64))
+                (left, top), (right, bottom) = b.corners(w, h)
+                print('rect: (left, top), (right, bottom)', (left, top), (right, bottom), class_names[b.class_idx], b.score)
+                draw.rectangle([left, top, right, bottom], outline=colors[b.class_idx])
+                del draw
 
         for i, c in reversed(list(enumerate(out_classes))):
             predicted_class = class_names[c]
@@ -245,8 +257,6 @@ def _main(args):
 
             label = '{} {:.3f}'.format(predicted_class, score)
 
-            draw = ImageDraw.Draw(image)
-            label_size = draw.textsize(label, font)
 
             top, left, bottom, right = box
             top = max(0, np.floor(top + 0.5).astype('int32'))
@@ -255,25 +265,35 @@ def _main(args):
             right = min(w, np.floor(right + 0.5).astype('int32'))
 
             c_x = (left + right) / 2 / w
-            c_y = (top+bottom) / 2 / h
-            print(label, (left, top), (right, bottom), 'center: ({:.3f}, {:.3f})'.format(c_x, c_y))
+            c_y = (top + bottom) / 2 / h
+            box_w = (right - left) / w
+            box_h = (bottom - top) / h
+            print(
+                label, (left, top), (right, bottom),
+                'rel center: ({:.3f}, {:.3f})'.format(c_x, c_y),
+                'rel size: ({:.3f}, {:.3f})'.format(box_w, box_h)
+            )
 
-            if top - label_size[1] >= 0:
-                text_origin = np.array([left, top - label_size[1]])
-            else:
-                text_origin = np.array([left, top + 1])
 
-            # My kingdom for a good redistributable image drawing library.
-            for i in range(thickness):
-                draw.rectangle(
-                    [left + i, top + i, right - i, bottom - i],
-                    outline=colors[c])
-            if not args.no_label:
-                draw.rectangle(
-                    [tuple(text_origin), tuple(text_origin + label_size)],
-                    fill=colors[c])
-                draw.text(text_origin, label, fill=(0, 0, 0), font=font)
-            del draw
+            if not args.new_boxes:
+                draw = ImageDraw.Draw(image)
+                label_size = draw.textsize(label, font)
+
+                if top - label_size[1] >= 0:
+                    text_origin = np.array([left, top - label_size[1]])
+                else:
+                    text_origin = np.array([left, top + 1])
+
+                for i in range(thickness):
+                    draw.rectangle(
+                        [left + i, top + i, right - i, bottom - i],
+                        outline=colors[c])
+                if not args.no_label:
+                    draw.rectangle(
+                        [tuple(text_origin), tuple(text_origin + label_size)],
+                        fill=colors[c])
+                    draw.text(text_origin, label, fill=(0, 0, 0), font=font)
+                del draw
 
         cv_image2 = np.array(image)
         if args.original:
