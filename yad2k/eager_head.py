@@ -18,14 +18,14 @@ import numpy as np
 
 @attr.s
 class Anchor:
-    x_idx = attr.ib(type=int, repr=False)
-    y_idx = attr.ib(type=int, repr=False)
-    score = attr.ib(type=float)
-    multipliers = attr.ib(repr=False)  # anchor relative factors
-    raw_data = attr.ib(repr=False)  # this is too much information, so don't repr it!
-    box_center = attr.ib()
-    box_size = attr.ib(repr=True)
-    class_idx = attr.ib(type=int)
+    x_idx = attr.ib(type=int, repr=False, default=0)
+    y_idx = attr.ib(type=int, repr=False, default=0)
+    score = attr.ib(type=float, default=0)
+    multipliers = attr.ib(repr=False, default=None)  # anchor relative factors
+    raw_data = attr.ib(repr=False, default=None)  # this is too much information, so don't repr it!
+    box_center = attr.ib(default=[0, 0])
+    box_size = attr.ib(repr=True, default=[1, 1])
+    class_idx = attr.ib(type=int, default=None)
 
     def corners(self, image_width=1, image_height=1):
         image_size = np.array([image_width, image_height])
@@ -33,6 +33,9 @@ class Anchor:
         abs_center = self.box_center * image_size
         return np.array([abs_center - half_size, abs_center + half_size]).round(0).astype(np.int)
 
+    @property
+    def area(self):
+        return self.box_size[0] * self.box_size[1]
 
 def filter_anchors(features, anchors, threshold=0.5):
     batches = features.reshape(features.shape[:-1] + (len(anchors), -1))
@@ -75,6 +78,43 @@ def filter_anchors(features, anchors, threshold=0.5):
                     ))
 
         results.append(anchors_above)
+
+    return results
+
+
+def interval_intersection(x_1, w_1, x_2, w_2):
+    if abs(x_2 - x_1) > (w_1 + w_2) / 2:
+        return 0
+
+    points = sorted([x_1 - w_1/2, x_1 + w_1 / 2, x_2 - w_2 / 2, x_2 + w_2 / 2])
+    return points[2] - points[1]
+
+
+def intersection_over_union(a_1 : Anchor, a_2 : Anchor):
+    """Calculate IoU - a.k.a. Jaccard index of 2 boxes.
+
+    >>> intersection_over_union(Anchor(box_center=[0, 0], box_size=[2, 2]), Anchor(box_center=[0, 0], box_size=[4, 4]))
+    0.25
+    """
+    x_overlap = interval_intersection(a_1.box_center[0], a_1.box_size[0], a_2.box_center[0], a_2.box_size[0])
+    y_overlap = interval_intersection(a_1.box_center[1], a_1.box_size[1], a_2.box_center[1], a_2.box_size[1])
+    intersection = x_overlap * y_overlap
+    union = a_1.area + a_2.area - intersection
+    return intersection / union
+
+
+def non_maximum_suppression(anchors, iou_threshold=0.5):
+    """Eliminate overlapping boxes with lower scores.
+
+    I know, quadratic. Need to read some Adrian from pyimagesearch, maybe he knows
+    how to do it in N log N."""
+    results = []
+
+    for anchor in sorted(anchors, key=lambda x: x.score, reverse=True):
+        if any(intersection_over_union(anchor, accepted) > iou_threshold for accepted in results):
+            continue
+
+        results.append(anchor)
 
     return results
 

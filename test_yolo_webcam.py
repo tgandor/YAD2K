@@ -55,7 +55,7 @@ def _main(args):
 
     import cv2
     from yad2k.utils.video import rotate_image, FPS, ImageDirectoryVideoCapture
-    from yad2k.eager_head import filter_anchors
+    from yad2k.eager_head import filter_anchors, non_maximum_suppression
 
     if os.path.isdir(str(args.source)):
         cap = ImageDirectoryVideoCapture(args.source)
@@ -207,10 +207,13 @@ def _main(args):
         print(out_anchors_split[index])  # cell with the anchor of max objectness
         """
 
-        my_boxes_batch = filter_anchors(raw_output, anchors, args.score_threshold)
+        boxes_batch = filter_anchors(raw_output, anchors, args.score_threshold)
 
-        for img_idx, my_boxes in enumerate(my_boxes_batch):
-            print('On image {} of {} in batch'.format(img_idx+1, len(my_boxes_batch)))
+        for img_idx, all_boxes in enumerate(boxes_batch):
+            print('On image {} of {} in batch'.format(img_idx+1, len(boxes_batch)))
+
+            my_boxes = non_maximum_suppression(all_boxes, args.iou_threshold)
+            print('{} boxes before NMS, {} after'.format(len(all_boxes), len(my_boxes)))
 
             for i, box in enumerate(my_boxes):
                 # print(i, class_names[box.class_idx], 'score =', box.score, box.corners(w, h).flatten(), 'for (w, h) =', (w, h))
@@ -240,7 +243,7 @@ def _main(args):
 
         # not going into draw scope just for now...
         if args.new_boxes:
-            for i, b in enumerate(my_boxes_batch[0]):
+            for i, b in enumerate(my_boxes):
                 draw = ImageDraw.Draw(image)
                 x, y = b.box_center * np.array([w, h])
                 r = 4
